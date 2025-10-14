@@ -12,6 +12,9 @@
         <div class="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-8 text-center">
             <h1 class="text-4xl font-bold mb-2">🏆 Coding Tournament</h1>
             <p class="text-lg">Challenge yourself with 7 coding problems</p>
+            <button id="logoutBtn" class="hidden mt-2 bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg text-sm font-semibold transition">
+                Logout
+            </button>
         </div>
 
         <div class="p-8">
@@ -41,7 +44,8 @@
                 <div class="flex justify-between items-center mb-6">
                     <div>
                         <h2 class="text-3xl font-bold text-gray-800">Your Problems</h2>
-                        <p class="text-gray-600 mt-1">Total Score: <span id="totalScore" class="font-bold text-purple-600">0</span> points</p>
+                        <p class="text-gray-600 mt-1">Welcome, <span id="studentNameDisplay" class="font-bold text-purple-600"></span>!</p>
+                        <p class="text-gray-600">Total Score: <span id="totalScore" class="font-bold text-purple-600">0</span> points</p>
                     </div>
                     <button id="viewLeaderboard" 
                         class="bg-yellow-500 text-white px-6 py-2 rounded-lg font-semibold hover:bg-yellow-600 transition">
@@ -122,6 +126,7 @@
         let problemsData = [];
         let studentProgress = {};
         let totalScore = 0;
+        let currentSection = 'registration';
 
         const problemDescriptions = {
             0: {
@@ -223,6 +228,84 @@ Function Signature:
             }
         };
 
+        // LocalStorage functions
+        function saveToLocalStorage() {
+            const data = {
+                currentStudent,
+                studentProgress,
+                totalScore,
+                currentSection,
+                problemsData,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('codingTournament', JSON.stringify(data));
+        }
+
+        function loadFromLocalStorage() {
+            const data = localStorage.getItem('codingTournament');
+            if (data) {
+                try {
+                    const parsed = JSON.parse(data);
+                    
+                    // Check if data is not too old (24 hours)
+                    const hoursPassed = (Date.now() - parsed.timestamp) / (1000 * 60 * 60);
+                    if (hoursPassed > 24) {
+                        localStorage.removeItem('codingTournament');
+                        return false;
+                    }
+                    
+                    currentStudent = parsed.currentStudent;
+                    studentProgress = parsed.studentProgress || {};
+                    totalScore = parsed.totalScore || 0;
+                    currentSection = parsed.currentSection || 'registration';
+                    problemsData = parsed.problemsData || [];
+                    
+                    return true;
+                } catch (e) {
+                    console.error('Error loading from localStorage:', e);
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        function clearLocalStorage() {
+            localStorage.removeItem('codingTournament');
+            currentStudent = null;
+            studentProgress = {};
+            totalScore = 0;
+            currentSection = 'registration';
+            location.reload();
+        }
+
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', async () => {
+            const hasData = loadFromLocalStorage();
+            
+            if (hasData && currentStudent) {
+                // User has previous session
+                document.getElementById('logoutBtn').classList.remove('hidden');
+                await loadProblems();
+                
+                if (currentSection === 'problemsList' || currentSection === 'problemSolve') {
+                    showSection('problemsList');
+                    document.getElementById('studentNameDisplay').textContent = currentStudent.name;
+                    await loadProgress();
+                } else {
+                    showSection(currentSection);
+                }
+            } else {
+                showSection('registration');
+            }
+        });
+
+        // Logout button
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            if (confirm('Are you sure you want to logout? Your progress is saved on the server.')) {
+                clearLocalStorage();
+            }
+        });
+
         // Load problems from backend
         async function loadProblems() {
             try {
@@ -231,6 +314,7 @@ Function Signature:
                 if (res.ok) {
                     problemsData = data.problems;
                     renderProblemCards();
+                    saveToLocalStorage();
                 }
             } catch (err) {
                 console.error('Failed to load problems');
@@ -324,9 +408,12 @@ Function Signature:
                 const data = await res.json();
                 if (res.ok) {
                     currentStudent = data.student;
+                    document.getElementById('logoutBtn').classList.remove('hidden');
+                    document.getElementById('studentNameDisplay').textContent = currentStudent.name;
                     await loadProblems();
                     showSection('problemsList');
                     await loadProgress();
+                    saveToLocalStorage();
                 } else {
                     alert(data.error || 'Registration failed');
                 }
@@ -364,6 +451,7 @@ Function Signature:
                 if (res.ok) {
                     displayResults(data);
                     await loadProgress();
+                    saveToLocalStorage();
                 } else {
                     alert(data.error || 'Submission failed');
                 }
@@ -391,6 +479,8 @@ Function Signature:
         function showSection(sectionId) {
             document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
             document.getElementById(sectionId).classList.remove('hidden');
+            currentSection = sectionId;
+            saveToLocalStorage();
         }
 
         function displayResults(data) {
@@ -445,6 +535,7 @@ Function Signature:
                     }
                     
                     updateProgress();
+                    saveToLocalStorage();
                 }
             } catch (err) {
                 console.error('Failed to load progress');
@@ -531,6 +622,11 @@ Function Signature:
             
             content.innerHTML = html;
         }
+
+        // Auto-save on beforeunload
+        window.addEventListener('beforeunload', () => {
+            saveToLocalStorage();
+        });
     </script>
 </body>
 </html>
