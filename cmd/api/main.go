@@ -120,7 +120,7 @@ func main() {
 	rdb = connectRedis()
 	defer rdb.Close()
 
-	// Register routes
+	// Register routeshhh
 	http.HandleFunc("/api/symbol", getSymbolHandler)
 	http.HandleFunc("/api/all", getAllHandler)
 	http.HandleFunc("/ws", wsHandler)
