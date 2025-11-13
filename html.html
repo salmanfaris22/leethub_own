@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Redis Live Dashboard</title>
+
+  <style>
+    :root{
+      --bg-1:#071027;
+      --bg-2:#0f172a;
+      --card:#0b1220;
+      --muted:#94a3b8;
+      --accent1:#22d3ee;
+      --accent2:#a855f7;
+      --accent3:#f472b6;
+      --success:#22c55e;
+      --danger:#ef4444;
+      --glass: rgba(255,255,255,0.03);
+    }
+
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial}
+    body{
+      background: linear-gradient(135deg,var(--bg-1),var(--bg-2));
+      color:#e6eef8;
+      -webkit-font-smoothing:antialiased;
+      padding:24px;
+      display:flex;
+      align-items:flex-start;
+      justify-content:center;
+      gap:20px;
+    }
+
+    .container{
+      width:100%;
+      max-width:1200px;
+      display:grid;
+      grid-template-columns: 1fr 420px;
+      gap:20px;
+      align-items:start;
+    }
+
+    /* Left: Live area */
+    .panel{
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border: 1px solid rgba(255,255,255,0.04);
+      border-radius:12px;
+      padding:18px;
+      box-shadow: 0 6px 30px rgba(2,6,23,0.6);
+      min-height: 520px;
+    }
+
+    header.app-header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:12px;
+    }
+
+    .title{
+      display:flex;
+      align-items:center;
+      gap:12px;
+    }
+    .logo{
+      width:44px;height:44px;border-radius:8px;
+      background: linear-gradient(135deg,var(--accent1),var(--accent2));
+      display:flex;align-items:center;justify-content:center;font-weight:700;color:#031025;
+      box-shadow: 0 6px 20px rgba(168,85,247,0.12);
+    }
+    h1{font-size:18px;margin:0}
+    p.lead{margin:0;color:var(--muted);font-size:13px}
+
+    .controls{
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+    input[type="text"]{
+      background:var(--glass);
+      border:1px solid rgba(255,255,255,0.04);
+      color:inherit;
+      padding:10px 12px;
+      border-radius:8px;
+      outline:none;
+      min-width:220px;
+      font-size:14px;
+    }
+    button{
+      background:linear-gradient(90deg,var(--accent1),var(--accent2));
+      border:none;color:#021226;padding:10px 12px;border-radius:8px;font-weight:600;cursor:pointer;
+      transition:transform .12s ease;
+    }
+    button.secondary{
+      background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted);
+    }
+    button:active{transform:translateY(1px)}
+
+    /* status */
+    .status{
+      display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);
+    }
+    .dot{
+      width:12px;height:12px;border-radius:50%;background:gray;box-shadow:0 0 8px rgba(0,0,0,0.6);
+    }
+    .dot.connected{background:var(--success);box-shadow:0 0 10px rgba(34,197,94,0.25)}
+    .dot.disconnected{background:var(--danger);box-shadow:0 0 10px rgba(239,68,68,0.15)}
+
+    /* table */
+    .table-wrap{
+      margin-top:12px;
+      height:440px;
+      overflow:auto;
+      border-radius:8px;
+      border:1px solid rgba(255,255,255,0.03);
+    }
+    table{
+      width:100%;
+      border-collapse:collapse;
+      font-family: "Fira Code", monospace;
+      font-size:13px;
+    }
+    thead th{
+      position:sticky;top:0;
+      background:linear-gradient(180deg, rgba(2,6,23,0.6), rgba(2,6,23,0.45));
+      text-align:left;padding:10px 12px;font-size:12px;color:var(--muted);z-index:2;border-bottom:1px solid rgba(255,255,255,0.02);
+    }
+    tbody tr{
+      transition: background .12s ease;
+      cursor:default;
+    }
+    tbody tr:hover{background: rgba(255,255,255,0.01)}
+    td{padding:9px 12px;border-bottom:1px dashed rgba(255,255,255,0.02)}
+    .key {width:42%; color:#cbd5e1}
+    .val {width:30%; color:#7dd3fc; font-weight:700}
+    .time {width:28%; color:var(--muted); font-size:12px}
+
+    /* value changed highlight animation */
+    @keyframes flash {
+      0% { background: rgba(34,211,238,0.15); transform:scale(1.01) }
+      100% { background: transparent; transform:scale(1) }
+    }
+    .changed { animation: flash 700ms ease forwards; }
+
+    /* Right column: details & actions */
+    .side{
+      display:flex;flex-direction:column;gap:12px;min-height:520px;
+    }
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border-radius:12px;padding:14px;border:1px solid rgba(255,255,255,0.03);
+    }
+    .small{color:var(--muted);font-size:13px;margin-bottom:8px}
+
+    .big-value{
+      font-family: "Fira Code", monospace;
+      font-size:20px;color: #38bdf8;font-weight:700;
+      word-break:break-all;
+    }
+
+    .muted-note{color:var(--muted);font-size:13px}
+
+    /* responsive */
+    @media (max-width:980px){
+      .container{grid-template-columns:1fr; padding:8px}
+      .side{order:2}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="panel">
+      <header class="app-header">
+        <div class="title">
+          <div class="logo">RD</div>
+          <div>
+            <h1>Redis Live Dashboard</h1>
+            <p class="lead">Live stream + REST lookup for your Redis key-values</p>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          <div class="status">
+            <span id="connDot" class="dot disconnected"></span>
+            <span id="connText">Connecting...</span>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <button class="secondary" id="btnAll">Get All (REST)</button>
+            <button id="btnLive">Start Live</button>
+          </div>
+        </div>
+      </header>
+
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+        <input id="search" type="text" placeholder="Search symbol (e.g. ZKC_BNB or BNB / USDT)" />
+        <button class="secondary" id="btnFilter">Filter</button>
+        <input id="symbolInput" type="text" placeholder="Exact symbol for REST get (ZKC_BNB)" style="min-width:170px"/>
+        <button id="btnSymbol">Get Symbol</button>
+      </div>
+
+      <div class="table-wrap">
+        <table aria-live="polite">
+          <thead>
+            <tr><th>Symbol</th><th>Value</th><th>Updated</th></tr>
+          </thead>
+          <tbody id="rows">
+            <tr><td colspan="3" style="padding:20px;color:var(--muted)">Waiting for data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <div class="small">Selected symbol</div>
+        <div id="selectedKey" class="muted-note">— click any row to inspect / fetch by REST</div>
+        <div style="height:12px"></div>
+        <div class="small">Value</div>
+        <div id="selectedVal" class="big-value">—</div>
+        <div style="height:12px"></div>
+        <div class="small">Quick actions</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="secondary" id="btnCopy">Copy value</button>
+          <button class="secondary" id="btnOpenApi">Open API</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="small">About</div>
+        <div class="muted-note">This UI connects to your Go server endpoints at <code>localhost:8080</code>. Use the WebSocket stream for live updates and REST endpoints for one-time lookups.</div>
+        <div style="height:8px"></div>
+        <div class="small" style="margin-top:8px">Tips</div>
+        <ul style="color:var(--muted);padding-left:18px;margin:8px 0 0 0">
+          <li>Click "Start Live" to open WebSocket streaming</li>
+          <li>Use search to filter rows (name contains or token part)</li>
+          <li>Click a row to fetch via REST and inspect details</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Config
+    const WS_URL = "ws://localhost:8080/ws";
+    const API_ALL = "http://localhost:8080/api/all";
+    const API_SYMBOL = "http://localhost:8080/api/symbol?symbol=";
+
+    // Elements
+    const connDot = document.getElementById("connDot");
+    const connText = document.getElementById("connText");
+    const rows = document.getElementById("rows");
+    const searchInput = document.getElementById("search");
+    const btnFilter = document.getElementById("btnFilter");
+    const btnAll = document.getElementById("btnAll");
+    const btnLive = document.getElementById("btnLive");
+    const symbolInput = document.getElementById("symbolInput");
+    const btnSymbol = document.getElementById("btnSymbol");
+    const selectedKey = document.getElementById("selectedKey");
+    const selectedVal = document.getElementById("selectedVal");
+    const btnCopy = document.getElementById("btnCopy");
+    const btnOpenApi = document.getElementById("btnOpenApi");
+
+    // State
+    let ws = null;
+    let liveEnabled = false;
+    let dataState = {}; // { key: { val, updatedAt } }
+    let lastValues = {}; // previous values to detect changes
+    let currentFilter = "";
+
+    // Helpers
+    function setConnected(yes){
+      connDot.classList.toggle("connected", yes);
+      connDot.classList.toggle("disconnected", !yes);
+      connText.textContent = yes ? "Live (connected)" : "Disconnected";
+    }
+
+    function renderTable(){
+      const filter = currentFilter.trim().toLowerCase();
+      const entries = Object.entries(dataState).sort((a,b)=>a[0].localeCompare(b[0]));
+      if(entries.length === 0){
+        rows.innerHTML = '<tr><td colspan="3" style="padding:20px;color:var(--muted)">No data</td></tr>';
+        return;
+      }
+
+      const html = entries
+        .filter(([k]) => {
+          if(!filter) return true;
+          // allow partial match on full symbol or on token parts (BNB/USDT)
+          const keyLower = k.toLowerCase();
+          if(keyLower.includes(filter)) return true;
+          // if filter contains underscore or space, also split
+          const parts = keyLower.split(/[_\-/]/);
+          return parts.some(p => p.includes(filter));
+        })
+        .map(([k, meta]) => {
+          const v = String(meta.val);
+          const time = new Date(meta.updatedAt).toLocaleTimeString();
+          return `<tr data-key="${escapeHtml(k)}">
+                    <td class="key">${escapeHtml(k)}</td>
+                    <td class="val">${escapeHtml(v)}</td>
+                    <td class="time">${time}</td>
+                  </tr>`;
+        }).join('');
+
+      rows.innerHTML = html || '<tr><td colspan="3" style="padding:20px;color:var(--muted)">Filter produced no results</td></tr>';
+      attachRowClicks();
+    }
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
+
+    function attachRowClicks(){
+      document.querySelectorAll('tbody tr[data-key]').forEach(tr=>{
+        tr.onclick = async () => {
+          const key = tr.getAttribute('data-key');
+          selectedKey.textContent = key;
+          // call REST symbol API to get authoritative value
+          try {
+            const res = await fetch(API_SYMBOL + encodeURIComponent(key));
+            if(!res.ok){
+              const text = await res.text();
+              selectedVal.textContent = 'Error: ' + text;
+              return;
+            }
+            const json = await res.json();
+            const val = json[key];
+            selectedVal.textContent = val;
+          } catch (err) {
+            selectedVal.textContent = 'Error fetching symbol';
+          }
+        }
+      })
+    }
+
+    function markChangedKeys(newData){
+      // newData: map key->val
+      for(const [k, v] of Object.entries(newData)){
+        const prev = lastValues[k];
+        if(prev !== undefined && String(prev) !== String(v)){
+          // mark DOM row if exists
+          const tr = document.querySelector(`tbody tr[data-key="${CSS.escape(k)}"]`);
+          if(tr){
+            tr.classList.remove('changed');
+            // force reflow to restart animation
+            void tr.offsetWidth;
+            tr.classList.add('changed');
+          }
+        }
+        lastValues[k] = v;
+      }
+    }
+
+    // REST handlers
+    btnAll.onclick = async () => {
+      try{
+        const res = await fetch(API_ALL);
+        if(!res.ok) {
+          const txt = await res.text(); rows.innerHTML = `<tr><td colspan="3" style="padding:18px;color:var(--muted)">Error: ${txt}</td></tr>`; return;
+        }
+        const json = await res.json();
+        // Set state
+        const now = Date.now();
+        dataState = {};
+        Object.entries(json).forEach(([k,v]) => dataState[k] = { val: v, updatedAt: now });
+        markChangedKeys(json);
+        renderTable();
+      }catch(e){
+        rows.innerHTML = `<tr><td colspan="3" style="padding:18px;color:var(--muted)">Fetch error</td></tr>`;
+      }
+    };
+
+    btnSymbol.onclick = async () => {
+      const sym = symbolInput.value.trim();
+      if(!sym) return alert('Enter a symbol like ZKC_BNB');
+      try{
+        const res = await fetch(API_SYMBOL + encodeURIComponent(sym));
+        if(!res.ok){
+          const txt = await res.text(); alert('Error: ' + txt); return;
+        }
+        const json = await res.json();
+        const val = json[sym];
+        // display in side panel & also update main table
+        selectedKey.textContent = sym;
+        selectedVal.textContent = val;
+        dataState[sym] = { val: val, updatedAt: Date.now() };
+        markChangedKeys({ [sym]: val });
+        renderTable();
+      }catch(e){
+        alert('Fetch failed');
+      }
+    };
+
+    btnFilter.onclick = () => {
+      currentFilter = searchInput.value;
+      renderTable();
+    }
+
+    // WebSocket live
+    btnLive.onclick = () => {
+      if(liveEnabled){
+        stopWS();
+      } else {
+        startWS();
+      }
+    };
+
+    function startWS(){
+      if(ws) ws.close();
+      ws = new WebSocket(WS_URL);
+      btnLive.textContent = 'Stop Live';
+      liveEnabled = true;
+
+      ws.onopen = () => {
+        setConnected(true);
+      };
+      ws.onmessage = (ev) => {
+        try{
+          const payload = JSON.parse(ev.data || "{}");
+          // payload is map<string,string>
+          const now = Date.now();
+          // update dataState; we keep previous values to detect changes
+          markChangedKeys(payload);
+          Object.entries(payload).forEach(([k,v]) => {
+            dataState[k] = { val: v, updatedAt: now };
+          });
+          renderTable();
+        }catch(e){
+          console.error('bad ws msg', e);
+        }
+      }
+      ws.onclose = () => {
+        setConnected(false);
+        btnLive.textContent = 'Start Live';
+        liveEnabled = false;
+        // try reconnect after short delay
+        setTimeout(() => {
+          if(!liveEnabled) return;
+          startWS();
+        }, 2000);
+      }
+      ws.onerror = (e) => {
+        console.warn('ws error', e);
+      }
+    }
+
+    function stopWS(){
+      if(ws) ws.close();
+      ws = null;
+      liveEnabled = false;
+      setConnected(false);
+      btnLive.textContent = 'Start Live';
+    }
+
+    // side actions
+    btnCopy.onclick = () => {
+      const val = selectedVal.textContent || '';
+      if(!val) return;
+      navigator.clipboard?.writeText(val).then(()=> alert('Copied value'));
+    };
+
+    btnOpenApi.onclick = () => {
+      const key = selectedKey.textContent;
+      if(!key || key==='— click any row to inspect / fetch by REST') return alert('Select a key first');
+      window.open(API_SYMBOL + encodeURIComponent(key), '_blank');
+    };
+
+    // initial small fetch to populate quickly
+    (async function init(){
+      try{
+        const res = await fetch(API_ALL);
+        if(res.ok){
+          const json = await res.json();
+          const now = Date.now();
+          dataState = {};
+          Object.entries(json).forEach(([k,v]) => dataState[k] = { val: v, updatedAt: now });
+          renderTable();
+        }
+      }catch(e){
+        // ignore
+      }
+      // no live start automatically — user can click Start Live
+    })();
+  </script>
+</body>
+</html>
